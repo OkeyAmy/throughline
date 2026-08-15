@@ -1,0 +1,8 @@
+.hydradb/
+.venv/
+__pycache__/
+*.pyc
+registry.json
+node_modules/
+web/dist/
+data/

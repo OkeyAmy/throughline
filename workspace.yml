@@ -1,0 +1,19 @@
+# The demo organisation: five repos that depend on each other in the real world.
+# `provides` is the package namespace a repo publishes — it is what an external
+# import in another repo resolves to. Config, not inference (see loader/crossrepo.py).
+repos:
+  - name: fastapi
+    graph: data/fastapi/graph.json
+    provides: [fastapi]
+  - name: starlette
+    graph: data/starlette/graph.json
+    provides: [starlette]
+  - name: uvicorn
+    graph: data/uvicorn/graph.json
+    provides: [uvicorn]
+  - name: httpx
+    graph: data/httpx/graph.json
+    provides: [httpx]
+  - name: httpcore
+    graph: data/httpcore/graph.json
+    provides: [httpcore]
