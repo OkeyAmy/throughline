@@ -2,9 +2,13 @@ import type { ImpactRow } from "../api";
 
 /**
  * The comparison, live: the same question answered by embedding similarity over
- * the same corpus. Files the graph also reached are marked; files only the
- * baseline returned are not called wrong — they are called unshared, because
- * ripgrep truth, not this panel, decides who was right (eval_harness/results.md).
+ * the same corpus.
+ *
+ * This panel does not claim the baseline is wrong — on this workspace it usually
+ * is not, and the measured numbers are in eval_harness/results.md. It shows the
+ * difference in *kind*: similarity ranks a fixed handful, traversal enumerates a
+ * closure and can say how far it went. Overlap is marked, and so is what the walk
+ * found that a top-k could not have contained.
  */
 export function BaselineSplit({
   files,
@@ -25,6 +29,8 @@ export function BaselineSplit({
 }) {
   const reached = new Set(rows.map((row) => row.path));
   const shared = files.filter((file) => reached.has(file)).length;
+  const beyond = reached.size - shared;
+  const crossRepo = rows.filter((row) => row.cross_repo).length;
 
   return (
     <section className="border-t px-6 py-4" style={{ borderColor: "var(--rule)" }}>
@@ -41,10 +47,21 @@ export function BaselineSplit({
 
       {!loading && !error && files.length > 0 && (
         <>
-          <p className="mt-2 text-[11px]" style={{ color: "var(--ink-dim)" }}>
-            <span style={{ color: "var(--series-cross)" }}>{files.length - shared}</span> of the{" "}
-            {files.length} files it retrieved are not in the traversal's answer;{" "}
-            <span style={{ color: "var(--series-call)" }}>{shared}</span> overlap.
+          <p className="mt-2 max-w-3xl text-[11px]" style={{ color: "var(--ink-dim)" }}>
+            <span style={{ color: "var(--series-call)" }}>{shared}</span> of its{" "}
+            {files.length} files are also in the traversal's answer
+            {files.length - shared > 0 && (
+              <>
+                ; <span style={{ color: "var(--series-cross)" }}>{files.length - shared}</span> are
+                not
+              </>
+            )}
+            . The walk returned{" "}
+            <span style={{ color: "var(--ink)" }}>{beyond}</span> more that a top-{files.length}{" "}
+            could not have held —{" "}
+            <span style={{ color: "var(--series-cross)" }}>{crossRepo}</span> of them in another
+            repository — and it can say whether that set is complete. Similarity ranks; traversal
+            enumerates.
           </p>
           <ul className="mt-2 grid gap-x-6 gap-y-1 md:grid-cols-2">
             {files.map((file) => {

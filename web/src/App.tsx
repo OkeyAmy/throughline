@@ -119,7 +119,13 @@ export default function App() {
     if (!text) return;
 
     if (mode === "symbol") {
-      if (matches.length > 0) walkSymbol(matches[0]);
+      // Prefer a definition in source over a docs mention: `JSONResponse` matches
+      // both starlette/responses.py and starlette/docs/responses.md, and walking
+      // from the documentation page reaches three nodes instead of 748.
+      const best =
+        matches.find((m) => m.repo && /\.(py|ts|tsx|js|jsx|rs|go|java|rb)$/.test(m.path)) ??
+        matches[0];
+      if (best) walkSymbol(best);
       return;
     }
 
