@@ -11,6 +11,7 @@ shows (~1.5 ms each, measured).
 from __future__ import annotations
 
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from loader.writer import MAX_BATCH_ROWS, HydraClient, chunked
@@ -67,26 +68,39 @@ class HydraExpander:
         return pairs
 
 
-def hydrate(client: HydraClient, node_ids: Sequence[int]) -> dict[int, dict]:
-    """Fetch display properties for the nodes the caller intends to show."""
-    out: dict[int, dict] = {}
-    for node_id in node_ids:
-        rows = client.query(
-            "MATCH (n {id: $id}) RETURN n.name AS name, n.repo AS repo, n.path AS path, n.line AS line",
-            {"id": int(node_id)},
-        )["rows"]
-        if not rows:
-            out[int(node_id)] = {"id": int(node_id), "name": str(node_id), "repo": "", "path": "", "line": -1}
-            continue
-        name, repo, path, line = (_value(cell) for cell in rows[0])
-        out[int(node_id)] = {
-            "id": int(node_id),
-            "name": name,
-            "repo": repo or "external",
-            "path": path or "",
-            "line": line if isinstance(line, int) else -1,
-        }
-    return out
+def _hydrate_one(client: HydraClient, node_id: int) -> dict:
+    rows = client.query(
+        "MATCH (n {id: $id}) RETURN n.name AS name, n.repo AS repo, n.path AS path, n.line AS line",
+        {"id": int(node_id)},
+    )["rows"]
+    if not rows:
+        return {"id": int(node_id), "name": str(node_id), "repo": "", "path": "", "line": -1}
+    name, repo, path, line = (_value(cell) for cell in rows[0])
+    return {
+        "id": int(node_id),
+        "name": name,
+        "repo": repo or "external",
+        "path": path or "",
+        "line": line if isinstance(line, int) else -1,
+    }
+
+
+def hydrate(client: HydraClient, node_ids: Sequence[int], max_workers: int = 8) -> dict[int, dict]:
+    """Fetch display properties for a set of nodes.
+
+    Properties cannot be read in an UNWIND batch (the batched form's second
+    projection must be the destination id), so this is one small query per node —
+    ~1.5 ms each, run concurrently. Hydrating the whole closure rather than only
+    the visible rows is what makes the repo counts on screen true instead of a
+    count of whatever happened to fit on the first page.
+    """
+    ids = [int(node_id) for node_id in node_ids]
+    if not ids:
+        return {}
+    if len(ids) == 1:
+        return {ids[0]: _hydrate_one(client, ids[0])}
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        return {row["id"]: row for row in pool.map(lambda i: _hydrate_one(client, i), ids)}
 
 
 def find_symbols(client: HydraClient, prefix: str, limit: int = 20) -> list[dict]:

@@ -31,7 +31,15 @@ from server.hydra import (
     hydrate,
     paths_between,
 )
+from server.diff import (
+    changed_symbols,
+    fetch_diff,
+    first_identifier,
+    parse_pr_url,
+    select_seeds,
+)
 from server.ranking import rank_impact
+from server import llm
 
 HYDRA_URL = os.environ.get("HYDRADB_URL", "http://127.0.0.1:8443")
 HYDRA_TOKEN = os.environ.get("HYDRADB_TOKEN", "local-development-token-32-bytes")
@@ -41,6 +49,25 @@ app = FastAPI(title="throughline", version="0.1.0")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
+
+
+def summarise_rows(all_rows: list[dict], impacted: int, shown: int) -> dict:
+    """Totals over the whole closure, not over the page of rows being displayed.
+
+    Counting only the visible rows understates the answer — and the understatement
+    lands in the headline number, which is the one a reviewer acts on.
+    """
+    repos: dict[str, int] = {}
+    for row in all_rows:
+        repos[row["repo"]] = repos.get(row["repo"], 0) + 1
+    return {
+        "impacted": impacted,
+        "shown": shown,
+        "in_repos": len(repos),
+        "repos": dict(sorted(repos.items(), key=lambda kv: -kv[1])),
+        "tests": sum(1 for r in all_rows if r["is_test"]),
+        "cross_repo": sum(1 for r in all_rows if r["cross_repo"]),
+    }
 
 
 def client() -> HydraClient:
@@ -103,24 +130,15 @@ def impact(request: ImpactRequest) -> dict:
         )
         walk_ms = (time.perf_counter() - started) * 1000
 
-        shown = sorted(result.hops.items(), key=lambda kv: kv[1])[: request.limit * 2]
-        info = hydrate(c, [node_id for node_id, _ in shown])
-        rows = rank_impact(dict(shown), info, seed_repo=seed_info.get("repo", ""))[: request.limit]
-
-        repos: dict[str, int] = {}
-        for row in rows:
-            repos[row["repo"]] = repos.get(row["repo"], 0) + 1
+        info = hydrate(c, list(result.hops))
+        all_rows = rank_impact(result.hops, info, seed_repo=seed_info.get("repo", ""))
+        rows = all_rows[: request.limit]
+        totals = summarise_rows(all_rows, len(result.hops), len(rows))
 
         return {
             "seed": seed_info,
             "rows": rows,
-            "totals": {
-                "impacted": len(result.hops),
-                "shown": len(rows),
-                "repos": repos,
-                "tests": sum(1 for r in rows if r["is_test"]),
-                "cross_repo": sum(1 for r in rows if r["cross_repo"]),
-            },
+            "totals": totals,
             "trust": {
                 "exact": result.exact,
                 "truncated_by": result.truncated_by,
@@ -200,24 +218,16 @@ def impact_stream(symbol_id: int, max_depth: int = 12, limit: int = 200) -> Stre
                     break
 
             walk_ms = (time.perf_counter() - started) * 1000
-            shown = sorted(result.hops.items(), key=lambda kv: kv[1])[: limit * 2]
-            info = hydrate(c, [node_id for node_id, _ in shown])
-            rows = rank_impact(dict(shown), info, seed_repo=seed_info.get("repo", ""))[:limit]
-            repos: dict[str, int] = {}
-            for row in rows:
-                repos[row["repo"]] = repos.get(row["repo"], 0) + 1
+            info = hydrate(c, list(result.hops))
+            all_rows = rank_impact(result.hops, info, seed_repo=seed_info.get("repo", ""))
+            rows = all_rows[:limit]
+            totals = summarise_rows(all_rows, len(result.hops), len(rows))
 
             yield _sse(
                 "done",
                 {
                     "rows": rows,
-                    "totals": {
-                        "impacted": len(result.hops),
-                        "shown": len(rows),
-                        "repos": repos,
-                        "tests": sum(1 for r in rows if r["is_test"]),
-                        "cross_repo": sum(1 for r in rows if r["cross_repo"]),
-                    },
+                    "totals": totals,
                     "trust": {
                         "exact": result.exact,
                         "truncated_by": result.truncated_by,
@@ -244,6 +254,155 @@ def impact_stream(symbol_id: int, max_depth: int = 12, limit: int = 200) -> Stre
 
 def _sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+class PRRequest(BaseModel):
+    url: str
+    max_depth: int = 12
+    limit: int = 200
+
+
+@app.post("/api/impact/pr")
+def impact_of_pr(request: PRRequest) -> dict:
+    """What a pull request reaches.
+
+    The diff's changed definitions become the seeds of one walk — the same closure
+    the single-symbol view runs, started from several points at once. Public repos
+    only: no GitHub token lives in this service.
+    """
+    parsed = parse_pr_url(request.url)
+    if parsed is None:
+        raise HTTPException(status_code=400, detail="not a GitHub pull request URL")
+    owner, repo, number = parsed
+
+    try:
+        diff = fetch_diff(owner, repo, number)
+    except Exception as exc:  # noqa: BLE001 — network/404s are the user's problem to see
+        raise HTTPException(status_code=502, detail=f"could not fetch that PR: {exc}") from exc
+
+    names = sorted(changed_symbols(diff))
+    if not names:
+        return {
+            "pr": {"owner": owner, "repo": repo, "number": number},
+            "changed_symbols": [],
+            "rows": [],
+            "totals": {"impacted": 0, "shown": 0, "repos": {}, "tests": 0, "cross_repo": 0},
+            "note": "no function or class definitions changed in this diff",
+        }
+
+    c = client()
+    try:
+        candidates = {name: find_symbols(c, name, limit=10) for name in names[:30]}
+        seeds = select_seeds(names[:30], candidates, pr_repo=repo)
+        if not seeds:
+            raise HTTPException(
+                status_code=404,
+                detail=f"none of the changed symbols are in the graph: {', '.join(names[:8])}",
+            )
+
+        started = time.perf_counter()
+        result = closure(
+            HydraExpander(c),
+            seeds=[s["id"] for s in seeds],
+            edge_types=list(IMPACT_INVERSE_EDGES),
+            max_depth=request.max_depth,
+            max_workers=MAX_WORKERS,
+        )
+        walk_ms = (time.perf_counter() - started) * 1000
+
+        seed_repo = seeds[0].get("repo", "")
+        info = hydrate(c, list(result.hops))
+        all_rows = rank_impact(result.hops, info, seed_repo=seed_repo)
+        rows = all_rows[: request.limit]
+        totals = summarise_rows(all_rows, len(result.hops), len(rows))
+
+        return {
+            "pr": {"owner": owner, "repo": repo, "number": number},
+            "changed_symbols": names,
+            "seeds": seeds,
+            "rows": rows,
+            "totals": totals,
+            "trust": {
+                "exact": result.exact,
+                "truncated_by": result.truncated_by,
+                "depth": result.depth_reached,
+                "max_depth": request.max_depth,
+                "round_trips": result.round_trips,
+                "ms": round(walk_ms),
+                "seeds": len(seeds),
+                "engine": "batched BFS over materialised inverse edges (HydraDB)",
+            },
+        }
+    finally:
+        c.close()
+
+
+class AskRequest(BaseModel):
+    question: str
+    limit: int = 60
+    summarise: bool = True
+
+
+@app.post("/api/ask")
+def ask(request: AskRequest) -> dict:
+    """Plain English in, traversal out.
+
+    The model does two small jobs: pick which candidate symbol the question means,
+    and write the summary at the end. What is impacted is decided by the walk, and
+    the rows are returned alongside the prose so nothing has to be taken on faith.
+    """
+    c = client()
+    try:
+        prefix = first_identifier(request.question)
+        candidates = find_symbols(c, prefix, limit=20)
+        if not candidates:
+            raise HTTPException(status_code=404, detail=f"nothing in the graph matches {prefix!r}")
+
+        seed_id = None
+        if llm.available():
+            try:
+                seed_id = llm.extract_symbol(request.question, candidates)
+            except Exception:  # noqa: BLE001 — the graph answer does not depend on the model
+                seed_id = None
+        if seed_id is None:
+            seed_id = next((s["id"] for s in candidates if s.get("repo")), candidates[0]["id"])
+
+        seed = hydrate(c, [seed_id])[int(seed_id)]
+        started = time.perf_counter()
+        result = closure(
+            HydraExpander(c),
+            seeds=[int(seed_id)],
+            edge_types=list(IMPACT_INVERSE_EDGES),
+            max_depth=12,
+            max_workers=MAX_WORKERS,
+        )
+        walk_ms = (time.perf_counter() - started) * 1000
+
+        info = hydrate(c, list(result.hops))
+        all_rows = rank_impact(result.hops, info, seed_repo=seed.get("repo", ""))
+        rows = all_rows[: request.limit]
+        totals = summarise_rows(all_rows, len(result.hops), len(rows))
+        trust = {
+            "exact": result.exact,
+            "truncated_by": result.truncated_by,
+            "depth": result.depth_reached,
+            "round_trips": result.round_trips,
+            "ms": round(walk_ms),
+            "engine": "batched BFS over materialised inverse edges (HydraDB)",
+            "llm_used_for": "symbol choice and summary only — never for what is impacted",
+        }
+
+        answer = None
+        if request.summarise and llm.available():
+            try:
+                answer = llm.summarise_impact(seed, rows, totals, trust)
+            except Exception as exc:  # noqa: BLE001
+                answer = f"(summary unavailable: {exc})"
+
+        return {"question": request.question, "seed": seed, "answer": answer,
+                "rows": rows, "totals": totals, "trust": trust}
+    finally:
+        c.close()
 
 
 @app.get("/api/evidence")

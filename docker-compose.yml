@@ -1,0 +1,81 @@
+# Whole stack, deployable to any box that runs Docker.
+#
+#   docker compose up -d
+#   docker compose run --rm ingest        # once, to build the graph
+#   open http://localhost:8000
+#
+# HydraDB is object-store-native: this file uses a local volume (CLOUD_PROVIDER=local).
+# To run it against S3 instead, swap CLOUD_PROVIDER/LOCAL_PATH for the S3 settings in
+# the HydraDB repo's Helm values — nothing in throughline changes, because storage is
+# the database's concern, not ours.
+
+services:
+  hydradb:
+    image: ghcr.io/hydra-db/hydradb:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8443:8443" # do not expose the database publicly
+      - "127.0.0.1:9090:9090" # admin: /readyz, /metrics
+    volumes:
+      - hydradb-data:/data
+    environment:
+      CLOUD_PROVIDER: local
+      LOCAL_PATH: /data/store
+      GRAPH_NAMESPACE: default
+      GRAPH_ID: default
+      GRAPH_CELL_ID: cell-0
+      GRAPH_CELLS: cell-0
+      GRAPH_NODE_ID: node-0
+      GRAPH_BOLT_NODE_ADDRESSES: node-0=127.0.0.1:7687
+      GRAPH_ADVERTISED_BOLT_ADDR: 127.0.0.1:7687
+      GRAPH_DATA_CACHE_DIR: /data/cache
+      GRAPH_AUTH_TOKEN_FILE: /data/auth-token
+      GRAPH_ALLOW_PLAINTEXT: "true"
+      # graph-node's query futures overflow the default thread stack without this:
+      # it answers /readyz, then aborts on the first query.
+      RUST_MIN_STACK: "33554432"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /data/store /data/cache
+        [ -f /data/auth-token ] || printf '%s\n' "${HYDRADB_TOKEN:-local-development-token-32-bytes}" > /data/auth-token
+        exec graph-node
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://127.0.0.1:9090/readyz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  throughline:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      hydradb:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      HYDRADB_URL: http://hydradb:8443
+      HYDRADB_TOKEN: ${HYDRADB_TOKEN:-local-development-token-32-bytes}
+      THROUGHLINE_WORKERS: "6"
+
+  # One-shot: loads data/<repo>/graph.json into HydraDB. Run after `up`.
+  ingest:
+    build: .
+    profiles: ["tools"]
+    depends_on:
+      hydradb:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+      - ./workspace.yml:/app/workspace.yml:ro
+    environment:
+      HYDRADB_TOKEN: ${HYDRADB_TOKEN:-local-development-token-32-bytes}
+    command: >-
+      python -m loader ingest --workspace workspace.yml
+      --base-url http://hydradb:8443
+      --token ${HYDRADB_TOKEN:-local-development-token-32-bytes}
+
+volumes:
+  hydradb-data:
