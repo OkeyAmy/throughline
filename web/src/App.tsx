@@ -6,16 +6,29 @@ import {
   type Symbol,
   type Totals,
   type Trust,
+  ask,
+  baseline,
   evidence,
   health,
+  impactOfPr,
   searchSymbols,
   streamImpact,
 } from "./api";
+import { BaselineSplit } from "./components/BaselineSplit";
 import { EvidencePanel } from "./components/EvidencePanel";
 import { ImpactList } from "./components/ImpactList";
 import { TrustStrip } from "./components/TrustStrip";
 
+type Mode = "symbol" | "pr" | "question";
+
+const MODES: { key: Mode; label: string; placeholder: string }[] = [
+  { key: "symbol", label: "a symbol", placeholder: "a function, class or module…" },
+  { key: "pr", label: "a pull request", placeholder: "https://github.com/encode/starlette/pull/3431" },
+  { key: "question", label: "a question", placeholder: "what breaks if I change JSONResponse?" },
+];
+
 export default function App() {
+  const [mode, setMode] = useState<Mode>("symbol");
   const [query, setQuery] = useState("JSONResponse");
   const [matches, setMatches] = useState<Symbol[]>([]);
   const [seed, setSeed] = useState<Symbol | null>(null);
@@ -25,6 +38,8 @@ export default function App() {
   const [trust, setTrust] = useState<Trust | null>(null);
   const [walking, setWalking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [answer, setAnswer] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "cross" | "tests">("all");
   const [selected, setSelected] = useState<number | null>(null);
   const [paths, setPaths] = useState<EvidencePath[]>([]);
@@ -32,6 +47,11 @@ export default function App() {
   const [pathsMs, setPathsMs] = useState(0);
   const [pathsLoading, setPathsLoading] = useState(false);
   const [graphNodes, setGraphNodes] = useState<number | null>(null);
+  const [compare, setCompare] = useState(false);
+  const [baselineFiles, setBaselineFiles] = useState<string[]>([]);
+  const [baselineMeta, setBaselineMeta] = useState({ ms: 0, corpus: 0, engine: "" });
+  const [baselineLoading, setBaselineLoading] = useState(false);
+  const [baselineError, setBaselineError] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -41,7 +61,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (query.trim().length < 2) {
+    if (mode !== "symbol" || query.trim().length < 2) {
       setMatches([]);
       return;
     }
@@ -55,22 +75,29 @@ export default function App() {
       live = false;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, mode]);
 
-  const walk = useCallback((symbol: Symbol) => {
+  const reset = () => {
     stopRef.current?.();
-    setSeed(symbol);
-    setMatches([]);
-    setQuery(symbol.name);
     setLevels([]);
     setRows([]);
     setTotals(null);
     setTrust(null);
     setSelected(null);
     setPaths([]);
+    setAnswer(null);
+    setNote(null);
     setError(null);
-    setWalking(true);
+    setBaselineFiles([]);
+    setBaselineError(null);
+  };
 
+  const walkSymbol = useCallback((symbol: Symbol) => {
+    reset();
+    setSeed(symbol);
+    setMatches([]);
+    setQuery(symbol.name);
+    setWalking(true);
     stopRef.current = streamImpact(symbol.id, {
       onSeed: setSeed,
       onLevel: (level) => setLevels((current) => [...current, level]),
@@ -87,21 +114,84 @@ export default function App() {
     });
   }, []);
 
-  const showEvidence = useCallback((row: ImpactRow) => {
-    setSelected(row.id);
-    setPathsLoading(true);
-    evidence(row.id, seed?.id)
-      .then((result) => {
-        setPaths(result.paths);
-        setPathsComplete(result.trust.complete);
-        setPathsMs(result.trust.ms);
-      })
-      .catch(() => setPaths([]))
-      .finally(() => setPathsLoading(false));
-  }, [seed]);
+  const run = useCallback(async () => {
+    const text = query.trim();
+    if (!text) return;
+
+    if (mode === "symbol") {
+      if (matches.length > 0) walkSymbol(matches[0]);
+      return;
+    }
+
+    reset();
+    setWalking(true);
+    try {
+      if (mode === "pr") {
+        const result = await impactOfPr(text);
+        setSeed(result.seeds?.[0] ?? null);
+        setRows(result.rows);
+        setTotals(result.totals);
+        setTrust((result.trust as Trust) ?? null);
+        setNote(
+          result.note ??
+            `${result.changed_symbols.length} definitions changed in ${result.pr.owner}/${result.pr.repo}#${result.pr.number} · ${result.trust?.seeds ?? 0} matched in the graph`,
+        );
+      } else {
+        const result = await ask(text);
+        setSeed(result.seed);
+        setRows(result.rows);
+        setTotals(result.totals);
+        setTrust(result.trust);
+        setAnswer(result.answer);
+      }
+    } catch (exc) {
+      setError(String(exc instanceof Error ? exc.message : exc));
+    } finally {
+      setWalking(false);
+    }
+  }, [mode, query, matches, walkSymbol]);
+
+  const showEvidence = useCallback(
+    (row: ImpactRow) => {
+      setSelected(row.id);
+      setPathsLoading(true);
+      evidence(row.id, seed?.id)
+        .then((result) => {
+          setPaths(result.paths);
+          setPathsComplete(result.trust.complete);
+          setPathsMs(result.trust.ms);
+        })
+        .catch(() => setPaths([]))
+        .finally(() => setPathsLoading(false));
+    },
+    [seed],
+  );
+
+  const runBaseline = useCallback(async () => {
+    if (!seed) return;
+    setCompare(true);
+    setBaselineLoading(true);
+    setBaselineError(null);
+    try {
+      const question =
+        mode === "question" ? query : `which files use ${seed.name} from ${seed.path}?`;
+      const result = await baseline(question, 15);
+      setBaselineFiles(result.files);
+      setBaselineMeta({
+        ms: result.trust.ms,
+        corpus: result.trust.corpus_files,
+        engine: result.trust.engine,
+      });
+    } catch (exc) {
+      setBaselineError(String(exc instanceof Error ? exc.message : exc));
+    } finally {
+      setBaselineLoading(false);
+    }
+  }, [seed, mode, query]);
 
   const repoEntries = Object.entries(totals?.repos ?? {}).sort((a, b) => b[1] - a[1]);
   const widest = repoEntries[0]?.[1] ?? 1;
+  const placeholder = MODES.find((m) => m.key === mode)!.placeholder;
 
   return (
     <div className="flex h-full flex-col" style={{ background: "var(--surface)" }}>
@@ -121,35 +211,65 @@ export default function App() {
       </header>
 
       <section className="border-b px-6 py-4" style={{ borderColor: "var(--rule)" }}>
-        <span className="section-marker">01 / what are you changing</span>
+        <div className="flex flex-wrap items-baseline gap-3">
+          <span className="section-marker">01 / what are you changing</span>
+          <div className="flex gap-1">
+            {MODES.map((option) => (
+              <button
+                key={option.key}
+                onClick={() => {
+                  setMode(option.key);
+                  setQuery("");
+                }}
+                className="border px-2 py-[3px] text-[11px]"
+                style={{
+                  borderColor: mode === option.key ? "var(--ink)" : "var(--rule)",
+                  color: mode === option.key ? "var(--ink)" : "var(--ink-dim)",
+                  background: mode === option.key ? "var(--surface-2)" : "transparent",
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="mt-2 flex items-center gap-3">
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && matches.length > 0) walk(matches[0]);
-            }}
-            placeholder="a function, class or module…"
+            onKeyDown={(event) => event.key === "Enter" && run()}
+            placeholder={placeholder}
             spellCheck={false}
-            className="w-full max-w-md border bg-transparent px-3 py-2 outline-none"
+            className="w-full max-w-2xl border bg-transparent px-3 py-2 outline-none"
             style={{ borderColor: "var(--rule)", color: "var(--ink)" }}
           />
           <button
-            onClick={() => matches.length > 0 && walk(matches[0])}
-            disabled={matches.length === 0 || walking}
+            onClick={run}
+            disabled={walking || !query.trim()}
             className="border px-3 py-2 text-[12px] disabled:opacity-40"
             style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
           >
             {walking ? "walking…" : "trace impact"}
           </button>
+          {seed && !walking && (
+            <button
+              onClick={runBaseline}
+              className="border px-3 py-2 text-[12px]"
+              style={{ borderColor: "var(--rule)", color: "var(--ink-dim)" }}
+              title="answer the same question by embedding similarity, for comparison"
+            >
+              compare with embeddings
+            </button>
+          )}
         </div>
 
-        {matches.length > 0 && (
+        {mode === "symbol" && matches.length > 0 && (
           <ul className="mt-2 flex flex-wrap gap-2">
             {matches.slice(0, 6).map((match) => (
               <li key={match.id}>
                 <button
-                  onClick={() => walk(match)}
+                  onClick={() => walkSymbol(match)}
                   className="border px-2 py-1 text-[11px]"
                   style={{ borderColor: "var(--rule)", color: "var(--ink-dim)" }}
                   title={`${match.path}:${match.line}`}
@@ -164,9 +284,26 @@ export default function App() {
 
         {seed && (
           <p className="mt-3 text-[11px]" style={{ color: "var(--ink-dim)" }}>
-            <span style={{ color: "var(--ink)" }}>{seed.name}</span> · {seed.repo} ·{" "}
-            {seed.path}
+            <span style={{ color: "var(--ink)" }}>{seed.name}</span> · {seed.repo} · {seed.path}
             {seed.line > 0 ? `:${seed.line}` : ""}
+          </p>
+        )}
+
+        {note && (
+          <p className="mt-2 text-[11px]" style={{ color: "var(--ink-faint)" }}>
+            {note}
+          </p>
+        )}
+
+        {answer && (
+          <p
+            className="display mt-3 max-w-3xl text-[15px] leading-relaxed"
+            style={{ color: "var(--ink)" }}
+          >
+            {answer}
+            <span className="ml-2 text-[10px]" style={{ color: "var(--ink-faint)" }}>
+              — written from the rows below; the walk decided them, not the model
+            </span>
           </p>
         )}
 
@@ -209,7 +346,7 @@ export default function App() {
               <span className="display text-[20px]" style={{ color: "var(--series-cross)" }}>
                 {totals.cross_repo}
               </span>{" "}
-              <span style={{ color: "var(--ink-dim)" }}>outside {seed?.repo}</span>
+              <span style={{ color: "var(--ink-dim)" }}>outside {seed?.repo ?? "this repo"}</span>
             </p>
             <p className="text-[12px]">
               <span className="display text-[20px]">{totals.tests}</span>{" "}
@@ -259,6 +396,18 @@ export default function App() {
           />
         )}
       </div>
+
+      {compare && (
+        <BaselineSplit
+          files={baselineFiles}
+          rows={rows}
+          ms={baselineMeta.ms}
+          corpus={baselineMeta.corpus}
+          engine={baselineMeta.engine}
+          loading={baselineLoading}
+          error={baselineError}
+        />
+      )}
 
       <TrustStrip trust={trust} nodes={graphNodes} />
     </div>

@@ -26,6 +26,7 @@ export type Trust = {
 export type Totals = {
   impacted: number;
   shown: number;
+  in_repos?: number;
   repos: Record<string, number>;
   tests: number;
   cross_repo: number;
@@ -99,4 +100,58 @@ export function streamImpact(
     source.close();
   });
   return () => source.close();
+}
+
+export type PRResult = {
+  pr: { owner: string; repo: string; number: number };
+  changed_symbols: string[];
+  seeds?: Symbol[];
+  rows: ImpactRow[];
+  totals: Totals;
+  trust?: Trust & { seeds?: number };
+  note?: string;
+};
+
+export async function impactOfPr(url: string): Promise<PRResult> {
+  const response = await fetch("/api/impact/pr", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, limit: 400 }),
+  });
+  if (!response.ok) throw new Error((await response.json()).detail ?? `pr ${response.status}`);
+  return response.json();
+}
+
+export type AskResult = {
+  question: string;
+  seed: Symbol;
+  answer: string | null;
+  rows: ImpactRow[];
+  totals: Totals;
+  trust: Trust;
+};
+
+export async function ask(question: string): Promise<AskResult> {
+  const response = await fetch("/api/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, limit: 400 }),
+  });
+  if (!response.ok) throw new Error((await response.json()).detail ?? `ask ${response.status}`);
+  return response.json();
+}
+
+export type BaselineResult = {
+  files: string[];
+  trust: { ms: number; corpus_files: number; engine: string; top_k: number };
+};
+
+export async function baseline(question: string, k = 15): Promise<BaselineResult> {
+  const response = await fetch("/api/baseline", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, k }),
+  });
+  if (!response.ok) throw new Error((await response.json()).detail ?? `baseline ${response.status}`);
+  return response.json();
 }

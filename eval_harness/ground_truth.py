@@ -12,6 +12,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from eval_harness.embed_baseline import EXCLUDED_PATH_PARTS
+
 
 def referencing_files(symbol: str, roots: list[Path], exclude_path: str | None = None) -> set[str]:
     """Repo-relative paths of Python files that mention `symbol`."""
@@ -29,6 +31,8 @@ def referencing_files(symbol: str, roots: list[Path], exclude_path: str | None =
             check=False,
         )
         for line in result.stdout.splitlines():
+            if any(part in line for part in EXCLUDED_PATH_PARTS):
+                continue
             path = _normalise(line, root)
             if path and path != exclude_path:
                 found.add(path)

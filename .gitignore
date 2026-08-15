@@ -7,3 +7,5 @@ node_modules/
 web/dist/
 data/
 .env
+.repos/
+eval_harness/.embed-index.json

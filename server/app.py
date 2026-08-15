@@ -40,6 +40,7 @@ from server.diff import (
 )
 from server.ranking import rank_impact
 from server import llm
+from eval_harness.embed_baseline import retrieve as embed_retrieve
 
 HYDRA_URL = os.environ.get("HYDRADB_URL", "http://127.0.0.1:8443")
 HYDRA_TOKEN = os.environ.get("HYDRADB_TOKEN", "local-development-token-32-bytes")
@@ -403,6 +404,51 @@ def ask(request: AskRequest) -> dict:
                 "rows": rows, "totals": totals, "trust": trust}
     finally:
         c.close()
+
+
+class BaselineRequest(BaseModel):
+    question: str
+    k: int = 15
+
+
+_BASELINE_INDEX: dict | None = None
+_BASELINE_PATH = Path(__file__).resolve().parent.parent / "eval_harness" / ".embed-index.json"
+
+
+@app.post("/api/baseline")
+def baseline(request: BaselineRequest) -> dict:
+    """The same question, answered the way an IDE assistant answers it today.
+
+    Cosine similarity over per-file embeddings of the same corpus the graph was
+    built from. It is here so the comparison in the UI is live and checkable,
+    not a claim in a README — including the cases where it does well.
+    """
+    global _BASELINE_INDEX
+    if _BASELINE_INDEX is None:
+        if not _BASELINE_PATH.exists():
+            raise HTTPException(
+                status_code=503,
+                detail="no embedding index — run `python -m eval_harness.run` once to build it",
+            )
+        _BASELINE_INDEX = json.loads(_BASELINE_PATH.read_text())
+
+    try:
+        started = time.perf_counter()
+        files = embed_retrieve(_BASELINE_INDEX, request.question, request.k)
+        return {
+            "question": request.question,
+            "files": files,
+            "trust": {
+                "ms": round((time.perf_counter() - started) * 1000),
+                "corpus_files": len(_BASELINE_INDEX),
+                "engine": f"cosine similarity over {os.environ.get('NVIDIA_EMBED_MODEL', 'nvidia/llama-nemotron-embed-1b-v2')}",
+                "top_k": request.k,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 — needs an API key; say so plainly
+        raise HTTPException(status_code=503, detail=f"baseline unavailable: {exc}") from exc
 
 
 @app.get("/api/evidence")

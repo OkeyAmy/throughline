@@ -20,6 +20,10 @@ import httpx
 BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 MODEL = os.environ.get("NVIDIA_EMBED_MODEL", "nvidia/llama-nemotron-embed-1b-v2")
 CHARS_PER_FILE = 6000  # head of the file; enough for imports, class and def lines
+#: fastapi ships thousands of tiny tutorial snippets under docs_src/. They are not
+#: the library, and embedding them would drown the corpus. Excluded from BOTH
+#: methods and from the ground truth, so the comparison stays like-for-like.
+EXCLUDED_PATH_PARTS = ("/docs_src/", "/.venv/", "/site-packages/")
 BATCH = 16
 
 
@@ -49,6 +53,8 @@ def build_index(roots: list[Path], cache: Path) -> dict[str, list[float]]:
     files: list[tuple[str, str]] = []
     for root in roots:
         for path in sorted(root.rglob("*.py")):
+            if any(part in str(path) for part in EXCLUDED_PATH_PARTS):
+                continue
             try:
                 text = path.read_text(encoding="utf-8", errors="ignore")[:CHARS_PER_FILE]
             except OSError:
