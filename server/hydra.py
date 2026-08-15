@@ -102,6 +102,55 @@ def find_symbols(client: HydraClient, prefix: str, limit: int = 20) -> list[dict
     return rank_symbols(rows_to_dicts(result), prefix)[:limit]
 
 
+def paths_between(
+    client: HydraClient,
+    source_id: int,
+    target_id: int,
+    edge_types: Sequence[str] = IMPACT_INVERSE_EDGES,
+    max_len: int = 8,
+    path_count: int = 12,
+    result_limit: int = 20000,
+) -> tuple[list[dict], bool]:
+    """Why *this* row is in the blast radius: paths from the changed symbol to it.
+
+    Asking for paths out of the impacted row instead returns nothing useful — a
+    test file is a leaf, nothing points away from it. The evidence a reviewer wants
+    is the chain that connects the change to the thing it reaches.
+    """
+    types = ", ".join(f'"{t}"' for t in edge_types)
+    result = client.query(
+        f"CALL algo.SPpaths({{sourceNode: {int(source_id)}, targetNode: {int(target_id)}, "
+        f"relTypes: [{types}], relDirection: \"outgoing\", maxLen: {int(max_len)}, "
+        f"pathCount: {int(path_count)}, resultLimit: {int(result_limit)}}}) "
+        "YIELD path RETURN path"
+    )
+    return _paths_from_rows(result["rows"]), len(result["rows"]) < path_count
+
+
+def _paths_from_rows(rows: list) -> list[dict]:
+    paths: list[dict] = []
+    for row in rows:
+        value = row[0]["value"]
+        paths.append(
+            {
+                "nodes": [
+                    {
+                        "id": n["id"],
+                        "name": n["properties"].get("name", {}).get("String", str(n["id"])),
+                        "repo": n["properties"].get("repo", {}).get("String", ""),
+                        "path": n["properties"].get("path", {}).get("String", ""),
+                    }
+                    for n in value["nodes"]
+                ],
+                "edges": [
+                    {"type": e["edge_type"], "src": e["src"], "dst": e["dst"]}
+                    for e in value["relationships"]
+                ],
+            }
+        )
+    return paths
+
+
 def evidence_paths(
     client: HydraClient,
     source_id: int,
@@ -123,24 +172,4 @@ def evidence_paths(
         f"relDirection: \"outgoing\", maxLen: {int(max_len)}, pathCount: {int(path_count)}, "
         f"resultLimit: {int(result_limit)}}}) YIELD path RETURN path"
     )
-    paths: list[dict] = []
-    for row in result["rows"]:
-        value = row[0]["value"]
-        paths.append(
-            {
-                "nodes": [
-                    {
-                        "id": n["id"],
-                        "name": n["properties"].get("name", {}).get("String", str(n["id"])),
-                        "repo": n["properties"].get("repo", {}).get("String", ""),
-                        "path": n["properties"].get("path", {}).get("String", ""),
-                    }
-                    for n in value["nodes"]
-                ],
-                "edges": [
-                    {"type": e["edge_type"], "src": e["src"], "dst": e["dst"]}
-                    for e in value["relationships"]
-                ],
-            }
-        )
-    return paths, len(paths) < path_count
+    return _paths_from_rows(result["rows"]), len(result["rows"]) < path_count

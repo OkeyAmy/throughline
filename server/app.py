@@ -8,19 +8,29 @@ one it got.
 
 from __future__ import annotations
 
+import json
 import os
 import time
+from queue import Queue
+from threading import Thread
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from loader.writer import HydraClient
 from server.closure import closure
-from server.hydra import IMPACT_INVERSE_EDGES, HydraExpander, evidence_paths, find_symbols, hydrate
+from server.hydra import (
+    IMPACT_INVERSE_EDGES,
+    HydraExpander,
+    evidence_paths,
+    find_symbols,
+    hydrate,
+    paths_between,
+)
 from server.ranking import rank_impact
 
 HYDRA_URL = os.environ.get("HYDRADB_URL", "http://127.0.0.1:8443")
@@ -126,14 +136,137 @@ def impact(request: ImpactRequest) -> dict:
         c.close()
 
 
+@app.get("/api/impact/stream")
+def impact_stream(symbol_id: int, max_depth: int = 12, limit: int = 200) -> StreamingResponse:
+    """The same walk, emitted level by level.
+
+    Each event is one BFS level that HydraDB actually served, so the UI shows the
+    frontier expanding hop by hop instead of a spinner. Same numbers as /api/impact.
+    """
+
+    def events():
+        c = client()
+        try:
+            seed_info = hydrate(c, [symbol_id])[int(symbol_id)]
+            yield _sse("seed", seed_info)
+
+            # The walk runs on its own thread and pushes each completed level onto a
+            # queue, so the client sees a hop land the moment HydraDB serves it —
+            # collecting levels first and emitting afterwards would not be streaming.
+            queue: Queue = Queue()
+            started = time.perf_counter()
+
+            def run() -> None:
+                try:
+                    queue.put(
+                        (
+                            "result",
+                            closure(
+                                HydraExpander(c),
+                                seeds=[int(symbol_id)],
+                                edge_types=list(IMPACT_INVERSE_EDGES),
+                                max_depth=max_depth,
+                                max_workers=MAX_WORKERS,
+                                on_level=lambda level: queue.put(
+                                    (
+                                        "level",
+                                        {
+                                            "depth": level.depth,
+                                            "discovered": len(level.discovered),
+                                            "total": level.total,
+                                            "round_trips": level.round_trips,
+                                            "frontier": level.frontier_size,
+                                        },
+                                    )
+                                ),
+                            ),
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001 — forwarded to the client
+                    queue.put(("failed", exc))
+
+            worker = Thread(target=run, daemon=True)
+            worker.start()
+
+            result = None
+            while True:
+                kind, payload = queue.get()
+                if kind == "level":
+                    yield _sse("level", payload)
+                elif kind == "failed":
+                    raise payload
+                else:
+                    result = payload
+                    break
+
+            walk_ms = (time.perf_counter() - started) * 1000
+            shown = sorted(result.hops.items(), key=lambda kv: kv[1])[: limit * 2]
+            info = hydrate(c, [node_id for node_id, _ in shown])
+            rows = rank_impact(dict(shown), info, seed_repo=seed_info.get("repo", ""))[:limit]
+            repos: dict[str, int] = {}
+            for row in rows:
+                repos[row["repo"]] = repos.get(row["repo"], 0) + 1
+
+            yield _sse(
+                "done",
+                {
+                    "rows": rows,
+                    "totals": {
+                        "impacted": len(result.hops),
+                        "shown": len(rows),
+                        "repos": repos,
+                        "tests": sum(1 for r in rows if r["is_test"]),
+                        "cross_repo": sum(1 for r in rows if r["cross_repo"]),
+                    },
+                    "trust": {
+                        "exact": result.exact,
+                        "truncated_by": result.truncated_by,
+                        "depth": result.depth_reached,
+                        "max_depth": max_depth,
+                        "round_trips": result.round_trips,
+                        "ms": round(walk_ms),
+                        "edge_types": list(IMPACT_INVERSE_EDGES),
+                        "engine": "batched BFS over materialised inverse edges (HydraDB)",
+                    },
+                },
+            )
+        except Exception as exc:  # the UI shows the failure rather than hanging
+            yield _sse("error", {"message": str(exc)[:400]})
+        finally:
+            c.close()
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
 @app.get("/api/evidence")
-def evidence(symbol_id: int, max_len: int = 4, path_count: int = 60) -> dict:
+def evidence(
+    symbol_id: int, from_id: int | None = None, max_len: int = 5, path_count: int = 12
+) -> dict:
+    """Why a row is in the blast radius.
+
+    With `from_id` (the changed symbol) this returns the chains that connect the
+    change to this row — the question a reviewer is actually asking. Without it,
+    it returns what the symbol reaches on its own.
+    """
     c = client()
     try:
         started = time.perf_counter()
-        paths, complete = evidence_paths(
-            c, symbol_id, max_len=max_len, path_count=path_count
-        )
+        if from_id is not None:
+            paths, complete = paths_between(
+                c, from_id, symbol_id, max_len=max_len, path_count=path_count
+            )
+        else:
+            paths, complete = evidence_paths(
+                c, symbol_id, max_len=min(max_len, 4), path_count=path_count
+            )
         return {
             "paths": paths,
             "trust": {
@@ -142,7 +275,7 @@ def evidence(symbol_id: int, max_len: int = 4, path_count: int = 60) -> dict:
                 "max_len": max_len,
                 "path_count": path_count,
                 "ms": round((time.perf_counter() - started) * 1000),
-                "engine": "algo.SSpaths (HydraDB native path procedure)",
+                "engine": "HydraDB native path procedure (algo.SPpaths / algo.SSpaths)",
             },
         }
     finally:

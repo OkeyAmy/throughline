@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+@import "@fontsource-variable/newsreader";
+@import "@fontsource-variable/newsreader/wght-italic.css";
+@import "@fontsource-variable/jetbrains-mono";
+
+/*
+  Editorial-technical, dark-first. Numbered sections and terse headlines echo the
+  host's own surfaces; every value on screen is set in mono because every value on
+  screen came out of the graph.
+
+  Series colours are the validated categorical slots (dataviz palette): blue for
+  call edges, orange for the cross-repo joint, aqua for imports. Validated in both
+  modes with scripts/validate_palette.js — light mode's aqua sits under 3:1, which
+  is why every colour is paired with a visible label, never used alone.
+*/
+:root {
+  --ink: #f4f3ee;
+  --ink-dim: #a3a29a;
+  --ink-faint: #6b6a63;
+  --surface: #0e0e0d;
+  --surface-1: #1a1a19;
+  --surface-2: #232322;
+  --rule: #2e2e2c;
+  --series-call: #3987e5;
+  --series-cross: #d95926;
+  --series-import: #199e70;
+  --good: #199e70;
+  --warn: #c98500;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --ink: #12120f;
+  --ink-dim: #52514e;
+  --ink-faint: #86847c;
+  --surface: #fcfcfb;
+  --surface-1: #f3f2ee;
+  --surface-2: #e9e8e2;
+  --rule: #d8d7d0;
+  --series-call: #2a78d6;
+  --series-cross: #eb6834;
+  --series-import: #1baf7a;
+  --good: #008300;
+  --warn: #eda100;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:where(:not([data-theme="dark"])) {
+    --ink: #12120f;
+    --ink-dim: #52514e;
+    --ink-faint: #86847c;
+    --surface: #fcfcfb;
+    --surface-1: #f3f2ee;
+    --surface-2: #e9e8e2;
+    --rule: #d8d7d0;
+    --series-call: #2a78d6;
+    --series-cross: #eb6834;
+    --series-import: #1baf7a;
+    --good: #008300;
+    --warn: #eda100;
+
+    color-scheme: light;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.display {
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+
+.section-marker {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+button {
+  transition: transform 160ms var(--ease-out), background-color 160ms ease,
+    border-color 160ms ease, color 160ms ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* The three motions this interface is allowed: a level landing, a row opening,
+   and the evidence panel arriving. Nothing else moves. */
+@keyframes level-land {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.level-land {
+  animation: level-land 220ms var(--ease-out) both;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.panel-in {
+  animation: panel-in 240ms var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .level-land,
+  .panel-in {
+    animation: none;
+  }
+  button:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+::selection {
+  background: var(--series-cross);
+  color: #fff;
+}
+
+input {
+  font-family: inherit;
+}
+
+/* Scrollbars, dark-first and unobtrusive. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}

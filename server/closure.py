@@ -23,6 +23,17 @@ Expander = Callable[[Sequence[int], str], Iterable[tuple[int, int]]]
 
 
 @dataclass
+class LevelProgress:
+    """Emitted as each BFS level completes, so a caller can stream the walk."""
+
+    depth: int
+    discovered: list[int]
+    total: int
+    round_trips: int
+    frontier_size: int
+
+
+@dataclass
 class ClosureResult:
     hops: dict[int, int]
     """node id -> hop distance from the nearest seed (seeds excluded)."""
@@ -43,6 +54,7 @@ def closure(
     max_depth: int = 6,
     node_cap: int = 20000,
     max_workers: int = 1,
+    on_level: Callable[[LevelProgress], None] | None = None,
 ) -> ClosureResult:
     """Walk the inverse edges from `seeds` until the graph is exhausted or a cap hits.
 
@@ -83,6 +95,16 @@ def closure(
                     break
             if truncated_by:
                 break
+        if on_level:
+            on_level(
+                LevelProgress(
+                    depth=depth,
+                    discovered=list(next_frontier),
+                    total=len(seen),
+                    round_trips=round_trips,
+                    frontier_size=len(frontier),
+                )
+            )
         if truncated_by:
             break
         frontier = next_frontier
