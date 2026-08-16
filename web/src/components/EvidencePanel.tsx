@@ -65,7 +65,7 @@ export function EvidencePanel({
                         style={{ background: EDGE_COLOR[edge.type] ?? "var(--rule)" }}
                       />
                       <span
-                        className="uppercase tracking-wider"
+                        className="uppercase tracking-wider text-[11px]"
                         style={{ color: EDGE_COLOR[edge.type] ?? "var(--ink-faint)" }}
                       >
                         {edge.type.toLowerCase().replace(/_/g, " ")}
@@ -81,7 +81,7 @@ export function EvidencePanel({
                     )}
                   </div>
                   {node.path && (
-                    <div className="truncate text-[10px]" style={{ color: "var(--ink-faint)" }}>
+                    <div className="truncate text-[12px]" style={{ color: "var(--ink-faint)" }}>
                       {node.path}
                     </div>
                   )}
