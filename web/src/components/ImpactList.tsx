@@ -21,9 +21,9 @@ export function ImpactList({ rows, seedRepo, filter, onFilter, selected, onSelec
   );
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
+    <section className="flex flex-col lg:min-h-0 lg:flex-1">
       <header
-        className="flex items-baseline justify-between gap-4 border-b px-6 py-3"
+        className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 border-b px-6 py-3"
         style={{ borderColor: "var(--rule)" }}
       >
         <div className="flex items-baseline gap-3">
@@ -50,7 +50,7 @@ export function ImpactList({ rows, seedRepo, filter, onFilter, selected, onSelec
         </div>
       </header>
 
-      <ol className="min-h-0 flex-1 overflow-y-auto">
+      <ol className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {visible.map((row) => {
           const isSelected = selected === row.id;
           return (

@@ -200,7 +200,7 @@ export default function App() {
   const placeholder = MODES.find((m) => m.key === mode)!.placeholder;
 
   return (
-    <div className="flex h-full flex-col" style={{ background: "var(--surface)" }}>
+    <div className="flex min-h-full flex-col lg:h-full" style={{ background: "var(--surface)" }}>
       <header
         className="flex flex-wrap items-baseline justify-between gap-3 border-b px-6 py-4"
         style={{ borderColor: "var(--rule)" }}
@@ -383,7 +383,7 @@ export default function App() {
         )}
       </section>
 
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+      <div className="flex flex-col lg:min-h-0 lg:flex-1 lg:flex-row">
         <ImpactList
           rows={rows}
           seedRepo={seed?.repo ?? ""}

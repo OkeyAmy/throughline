@@ -46,7 +46,7 @@ export function EvidencePanel({
         )}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div className="px-5 py-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {paths.map((path, index) => (
           <div
             key={index}
