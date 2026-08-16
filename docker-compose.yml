@@ -58,6 +58,9 @@ services:
       - hydradb
     ports:
       - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
     environment:
       HYDRADB_URL: http://hydradb:8443
       HYDRADB_TOKEN: ${HYDRADB_TOKEN:-local-development-token-32-bytes}

@@ -10,6 +10,8 @@ with the paths that prove it.
 Built for [Hack Hydra](https://hackhydra.hydradb.com/) 2026, **Track 02B — code
 graphs for IDE assistants**.
 
+![Impact view: 748 symbols reached, 567 outside the seed repo, hop-by-hop walk](docs/screenshots/impact-view.jpg)
+
 ---
 
 ## The problem
@@ -96,6 +98,13 @@ NVIDIA's OpenAI-compatible endpoint.
 
 **Web** — search a symbol, watch the walk expand hop by hop, filter to *other
 repos* or *tests to run*, click any row for the paths that connect the change to it.
+
+![Filtered to other repos, with the evidence chain for the selected row: JSONResponse → responses.py → starlette_responses → applications.py](docs/screenshots/cross-repo-evidence.jpg)
+
+The same question, answered live by embedding similarity for comparison — not a
+claim in a README, a button in the UI:
+
+![Baseline comparison: cosine similarity over the same corpus, overlap with the traversal marked](docs/screenshots/baseline-comparison.jpg)
 
 **Agents (MCP)** — six tools over the same query layer:
 
