@@ -13,6 +13,12 @@ services:
   hydradb:
     image: ghcr.io/hydra-db/hydradb:latest
     restart: unless-stopped
+    # The image runs as UID 10001, but Docker creates a named volume owned by root,
+    # so the node cannot create its store and restart-loops with
+    # `Os { code: 13, kind: PermissionDenied }`. Data lives in the volume, not on
+    # the host, so running this container as root is contained and keeps the
+    # quickstart a single command.
+    user: "0:0"
     ports:
       - "127.0.0.1:8443:8443" # do not expose the database publicly
       - "127.0.0.1:9090:9090" # admin: /readyz, /metrics
@@ -41,18 +47,15 @@ services:
         mkdir -p /data/store /data/cache
         [ -f /data/auth-token ] || printf '%s\n' "${HYDRADB_TOKEN:-local-development-token-32-bytes}" > /data/auth-token
         exec graph-node
-    healthcheck:
-      test: ["CMD", "sh", "-c", "wget -qO- http://127.0.0.1:9090/readyz || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
+    # No healthcheck: the image ships neither wget nor curl, so a HTTP probe from
+    # inside the container cannot work. Readiness is waited for by the client that
+    # needs it (`python -m loader wait`), which is also the thing that would fail.
 
   throughline:
     build: .
     restart: unless-stopped
     depends_on:
-      hydradb:
-        condition: service_healthy
+      - hydradb
     ports:
       - "8000:8000"
     environment:
@@ -65,17 +68,18 @@ services:
     build: .
     profiles: ["tools"]
     depends_on:
-      hydradb:
-        condition: service_healthy
+      - hydradb
     volumes:
       - ./data:/app/data:ro
       - ./workspace.yml:/app/workspace.yml:ro
     environment:
       HYDRADB_TOKEN: ${HYDRADB_TOKEN:-local-development-token-32-bytes}
     command: >-
+      sh -c "python -m loader wait --base-url http://hydradb:8443
+      --token ${HYDRADB_TOKEN:-local-development-token-32-bytes} &&
       python -m loader ingest --workspace workspace.yml
       --base-url http://hydradb:8443
-      --token ${HYDRADB_TOKEN:-local-development-token-32-bytes}
+      --token ${HYDRADB_TOKEN:-local-development-token-32-bytes}"
 
 volumes:
   hydradb-data:

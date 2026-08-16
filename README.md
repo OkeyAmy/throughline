@@ -67,17 +67,24 @@ uv tool install graphifyy          # the extractor (Apache-2.0, see Attribution)
 uv venv && uv pip install -e ".[dev]"
 .venv/bin/python -m loader ingest --workspace workspace.yml
 
-# 4. serve
-.venv/bin/uvicorn server.app:app --port 8000
-open http://localhost:8000
+# 4. serve — bind 0.0.0.0, not the uvicorn default. Chrome resolves `localhost`
+#    to ::1, where a 127.0.0.1-only bind is not listening: the page loads and
+#    every API call fails silently.
+.venv/bin/uvicorn server.app:app --host 0.0.0.0 --port 8000
+open http://127.0.0.1:8000
 ```
 
-Whole stack in containers instead:
+Whole stack in containers instead (verified end-to-end — HydraDB, ingest, and the
+app, from an empty volume):
 
 ```bash
-docker compose up -d
-docker compose --profile tools run --rm ingest
+docker compose up -d                              # HydraDB + the service
+docker compose --profile tools run --rm ingest    # waits for readiness, loads the graph
+open http://127.0.0.1:8000
 ```
+
+`data/` must already contain the extracted graphs (step 2 above); the ingest
+container mounts it read-only.
 
 Environment: copy `.env.example` to `.env`. Everything works without an API key
 except the plain-English `/api/ask` summary and the evaluation baseline, which use

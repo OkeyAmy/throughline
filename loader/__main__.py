@@ -20,6 +20,7 @@ from .crossrepo import link_external_to_providers
 from .graphjson import EdgeRow, NodeRow, parse_graph
 from .registry import Registry
 from .schema import INVERSE_OF
+from .wait import wait_for_ready
 from .writer import HydraClient, Writer
 
 NODE_LABEL = "Sym"
@@ -117,6 +118,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="throughline")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    ready = sub.add_parser("wait", help="block until HydraDB answers a query")
+    ready.add_argument("--base-url", default="http://127.0.0.1:8443")
+    ready.add_argument("--token", default="local-development-token-32-bytes")
+    ready.add_argument("--timeout", type=float, default=180.0)
+
     ing = sub.add_parser("ingest", help="load graphify output into HydraDB")
     ing.add_argument("--workspace", default="workspace.yml")
     ing.add_argument("--base-url", default="http://127.0.0.1:8443")
@@ -126,6 +132,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "ingest":
         ingest(args.workspace, args.base_url, args.token, args.registry)
+    elif args.command == "wait":
+        client = HydraClient(base_url=args.base_url, token=args.token)
+        print(f"waiting for HydraDB at {args.base_url}…")
+        wait_for_ready(client, timeout=args.timeout)
+        print("HydraDB is answering queries")
+        client.close()
     return 0
 
 
