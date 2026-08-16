@@ -240,7 +240,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="mt-2 flex items-center gap-3">
+        <div className="mt-2 flex flex-wrap items-center gap-3">
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}

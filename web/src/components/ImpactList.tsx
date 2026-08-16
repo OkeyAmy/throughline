@@ -79,7 +79,7 @@ export function ImpactList({ rows, seedRepo, filter, onFilter, selected, onSelec
                 <span className="min-w-0 flex-1 truncate" style={{ color: "var(--ink)" }}>
                   {row.name}
                 </span>
-                <span className="shrink-truncate text-[11px]" style={{ color: "var(--ink-faint)" }}>
+                <span className="min-w-0 max-w-[45%] shrink truncate text-[11px]" style={{ color: "var(--ink-faint)" }}>
                   {row.path}
                   {row.line > 0 ? `:${row.line}` : ""}
                 </span>
