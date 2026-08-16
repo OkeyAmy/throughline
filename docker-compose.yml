@@ -66,6 +66,17 @@ services:
       HYDRADB_TOKEN: ${HYDRADB_TOKEN:-local-development-token-32-bytes}
       THROUGHLINE_WORKERS: "6"
 
+  # Public HTTPS entry point. Outbound-only connection to Cloudflare — no ports
+  # to open on the host, no TLS cert to manage. Token comes from Zero Trust >
+  # Networks > Tunnels; the tunnel's Public Hostname is configured in that
+  # dashboard to point at http://throughline:8000, not here.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+    depends_on:
+      - throughline
+
   # One-shot: loads the graph baked into the image (seed/data.tar.gz) into
   # HydraDB. Run after `up`.
   ingest:
