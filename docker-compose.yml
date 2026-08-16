@@ -66,15 +66,13 @@ services:
       HYDRADB_TOKEN: ${HYDRADB_TOKEN:-local-development-token-32-bytes}
       THROUGHLINE_WORKERS: "6"
 
-  # One-shot: loads data/<repo>/graph.json into HydraDB. Run after `up`.
+  # One-shot: loads the graph baked into the image (seed/data.tar.gz) into
+  # HydraDB. Run after `up`.
   ingest:
     build: .
     profiles: ["tools"]
     depends_on:
       - hydradb
-    volumes:
-      - ./data:/app/data:ro
-      - ./workspace.yml:/app/workspace.yml:ro
     environment:
       HYDRADB_TOKEN: ${HYDRADB_TOKEN:-local-development-token-32-bytes}
     command: >-

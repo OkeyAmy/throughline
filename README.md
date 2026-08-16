@@ -85,8 +85,9 @@ docker compose --profile tools run --rm ingest    # waits for readiness, loads t
 open http://127.0.0.1:8000
 ```
 
-`data/` must already contain the extracted graphs (step 2 above); the ingest
-container mounts it read-only.
+`data/` graphs and the embedding index ship compressed inside the image
+(`seed/data.tar.gz`, unpacked at build), so a containerised deploy needs no host
+paths and no network — only the one-shot `ingest` run above.
 
 Environment: copy `.env.example` to `.env`. Everything works without an API key
 except the plain-English `/api/ask` summary and the evaluation baseline, which use

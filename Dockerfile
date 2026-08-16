@@ -20,6 +20,13 @@ COPY mcp_server ./mcp_server
 COPY eval_harness ./eval_harness
 RUN pip install --no-cache-dir -e .
 
+# The demo graph (extracted from public repos by scripts/fetch_workspace.sh) and
+# the prebuilt embedding index ship compressed, so a cloud build needs no host
+# paths and no network: unpack them once at build time.
+COPY workspace.yml ./
+COPY seed/data.tar.gz seed/embed-index.tar.gz ./
+RUN tar xzf data.tar.gz && tar xzf embed-index.tar.gz && rm data.tar.gz embed-index.tar.gz
+
 COPY --from=web /web/dist ./web/dist
 
 ENV HYDRADB_URL=http://hydradb:8443 \
