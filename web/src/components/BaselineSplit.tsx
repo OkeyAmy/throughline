@@ -20,18 +20,18 @@ function BarRow({
 }) {
   const pct = max > 0 ? Math.max((value / max) * 100, value > 0 ? 2 : 0) : 0;
   return (
-    <div className="flex items-center gap-3">
-      <span className="w-20 shrink-0 text-[11px]" style={{ color: "var(--ink-dim)" }}>
+    <div className="flex items-center gap-2">
+      <span className="w-14 shrink-0 truncate text-[11px]" style={{ color: "var(--ink-dim)" }}>
         {label}
       </span>
-      <div className="h-4 flex-1" style={{ background: "var(--surface-2)" }}>
+      <div className="h-4 min-w-8 flex-1" style={{ background: "var(--surface-2)" }}>
         <div className="h-4" style={{ width: `${pct}%`, background: color }} />
       </div>
       <span
-        className="w-20 shrink-0 text-right text-[11px] tabular-nums"
+        className="w-12 shrink-0 text-right text-[11px] tabular-nums"
         style={{ color: "var(--ink)" }}
       >
-        {value} files
+        {value}
       </span>
     </div>
   );
@@ -68,7 +68,10 @@ export function BaselineSplit({
   const scale = Math.max(totalFiles, files.length) || 1;
 
   return (
-    <section className="border-t px-6 py-4" style={{ borderColor: "var(--rule)" }}>
+    <section
+      className="border-t px-6 py-4 lg:max-h-[38vh] lg:shrink-0 lg:overflow-y-auto"
+      style={{ borderColor: "var(--rule)" }}
+    >
       <div className="flex flex-wrap items-baseline gap-3">
         <span className="section-marker">04 / same question, answered a different way</span>
         <span className="text-[11px]" style={{ color: "var(--ink-faint)" }}>
