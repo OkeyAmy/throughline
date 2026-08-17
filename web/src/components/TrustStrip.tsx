@@ -11,14 +11,19 @@ export function TrustStrip({ trust, nodes }: { trust: Trust | null; nodes: numbe
   const tiles: { label: string; value: string; tone?: "good" | "warn" }[] = trust
     ? [
         {
-          label: trust.exact ? "closure" : `cut short by ${trust.truncated_by}`,
-          value: trust.exact ? "exact" : "partial",
+          value: trust.exact ? "complete" : "hit a limit",
+          label: trust.exact
+            ? "nothing was missed"
+            : `cut short by ${trust.truncated_by} — more may exist`,
           tone: trust.exact ? "good" : "warn",
         },
-        { label: "depth reached", value: `${trust.depth}` },
-        { label: "round trips", value: `${trust.round_trips}` },
-        { label: "walk time", value: `${trust.ms} ms` },
-        { label: "graph nodes", value: nodes ? nodes.toLocaleString() : "—" },
+        { value: `${trust.depth}`, label: "hops followed" },
+        { value: `${trust.round_trips}`, label: "database queries" },
+        {
+          value: trust.ms >= 1000 ? `${(trust.ms / 1000).toFixed(1)}s` : `${trust.ms} ms`,
+          label: "time to answer",
+        },
+        { value: nodes ? nodes.toLocaleString() : "—", label: "symbols indexed" },
       ]
     : [];
 

@@ -27,45 +27,62 @@ export function BaselineSplit({
   loading: boolean;
   error: string | null;
 }) {
-  const reached = new Set(rows.map((row) => row.path));
-  const shared = files.filter((file) => reached.has(file)).length;
-  const beyond = reached.size - shared;
-  const crossRepo = rows.filter((row) => row.cross_repo).length;
+  const reachedFiles = new Set(rows.map((row) => row.path));
+  const sharedFiles = new Set(files.filter((file) => reachedFiles.has(file)));
+  const shared = sharedFiles.size;
+  const beyondFiles = new Set(
+    rows.filter((row) => !sharedFiles.has(row.path)).map((row) => row.path),
+  );
+  const beyond = beyondFiles.size;
+  const beyondCrossRepo = new Set(
+    rows.filter((row) => row.cross_repo && !sharedFiles.has(row.path)).map((row) => row.path),
+  ).size;
+  const totalFiles = shared + beyond;
 
   return (
     <section className="border-t px-6 py-4" style={{ borderColor: "var(--rule)" }}>
       <div className="flex flex-wrap items-baseline gap-3">
-        <span className="section-marker">04 / the same question, by similarity</span>
+        <span className="section-marker">04 / same question, answered a different way</span>
         <span className="text-[11px]" style={{ color: "var(--ink-faint)" }}>
           {loading
             ? "embedding…"
             : error
               ? error
-              : `top ${files.length} of ${corpus} files · ${ms} ms · ${engine}`}
+              : `top ${files.length} of ${corpus} files by similarity · ${ms} ms · ${engine}`}
         </span>
       </div>
 
       {!loading && !error && files.length > 0 && (
         <>
-          <p className="mt-2 max-w-3xl text-[11px]" style={{ color: "var(--ink-dim)" }}>
-            <span style={{ color: "var(--series-call)" }}>{shared}</span> of its{" "}
-            {files.length} files are also in the traversal's answer
-            {files.length - shared > 0 && (
-              <>
-                ; <span style={{ color: "var(--series-cross)" }}>{files.length - shared}</span> are
-                not
-              </>
-            )}
-            . The walk returned{" "}
-            <span style={{ color: "var(--ink)" }}>{beyond}</span> more that a top-{files.length}{" "}
-            could not have held —{" "}
-            <span style={{ color: "var(--series-cross)" }}>{crossRepo}</span> of them in another
-            repository — and it can say whether that set is complete. Similarity ranks; traversal
-            enumerates.
+          <p className="mt-1 max-w-3xl text-[11px]" style={{ color: "var(--ink-faint)" }}>
+            Same question, a second engine: instead of walking the graph, this ranks every file in
+            the workspace by embedding similarity and returns the top {files.length}. No fixed
+            ground truth exists for an arbitrary question, so there's no accuracy score here —
+            the measured F1 (0.350 graph vs 0.226 similarity, n=60) lives in the eval harness.
+            What this panel shows instead is what a ranked top-{files.length} can and can't cover.
+          </p>
+          <div className="mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-2">
+            <div>
+              <div className="display text-[22px] leading-none" style={{ color: "var(--ink)" }}>
+                {shared} / {totalFiles}
+              </div>
+              <div className="section-marker mt-1">
+                files the similarity search could return, out of what the walk actually found
+              </div>
+            </div>
+          </div>
+          <p className="mt-3 max-w-3xl text-[11px]" style={{ color: "var(--ink-dim)" }}>
+            All <span style={{ color: "var(--series-call)" }}>{shared}</span> files it returned
+            were also found by the walk — it wasn't wrong, just narrow. The walk found{" "}
+            <span style={{ color: "var(--ink)" }}>{beyond}</span> more files a fixed top-
+            {files.length} list could never have held, no matter how good the ranking —{" "}
+            <span style={{ color: "var(--series-cross)" }}>{beyondCrossRepo}</span> of those in a
+            different repository — and can say that {totalFiles} is the complete set, not a guess
+            at one.
           </p>
           <ul className="mt-2 grid gap-x-6 gap-y-1 md:grid-cols-2">
             {files.map((file) => {
-              const alsoInGraph = reached.has(file);
+              const alsoInGraph = reachedFiles.has(file);
               return (
                 <li key={file} className="flex items-baseline gap-2 text-[11px]">
                   <span
