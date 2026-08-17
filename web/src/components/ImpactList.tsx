@@ -120,6 +120,9 @@ export function ImpactList({ rows, seedRepo, filter, onFilter, selected, onSelec
   const primaryGroups = groups.filter((group) => group.hop <= 2);
   const restGroups = groups.filter((group) => group.hop > 2);
   const restCount = restGroups.reduce((sum, group) => sum + group.rows.length, 0);
+  const restHops = restGroups.map((group) => group.hop);
+  const restRange =
+    restHops.length > 1 ? `hop ${restHops[0]}–${restHops[restHops.length - 1]}` : `hop ${restHops[0]}`;
 
   return (
     <section className="flex flex-col lg:min-h-0 lg:flex-1">
@@ -174,7 +177,7 @@ export function ImpactList({ rows, seedRepo, filter, onFilter, selected, onSelec
                 className="cursor-pointer border-b px-6 py-2 text-[11px]"
                 style={{ borderColor: "var(--rule)", color: "var(--ink-faint)" }}
               >
-                show {restCount} more at hop 3+
+                show {restCount} more at {restRange}
               </summary>
               <ol>
                 {restGroups.map((group) => (

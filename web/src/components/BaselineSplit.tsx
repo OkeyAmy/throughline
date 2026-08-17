@@ -3,13 +3,12 @@ import type { ImpactRow } from "../api";
 /**
  * The comparison, live: the same question answered by embedding similarity,
  * asked for exactly as many files as the walk found — so the two are matched
- * at k and one overlap number means something. The walk is the reference set
- * here, not independent ground truth; that comparison is in the README.
+ * at k and one overlap number means something. Replaces the trust strip while
+ * shown, rather than stacking below it, so only one set of stats is on screen.
  */
 export function BaselineSplit({
   files,
   rows,
-  ms,
   corpus,
   engine,
   loading,
@@ -17,7 +16,6 @@ export function BaselineSplit({
 }: {
   files: string[];
   rows: ImpactRow[];
-  ms: number;
   corpus: number;
   engine: string;
   loading: boolean;
@@ -30,18 +28,14 @@ export function BaselineSplit({
   const pct = totalFiles > 0 ? Math.round((shared / totalFiles) * 100) : 0;
 
   return (
-    <section
+    <div
       className="border-t px-6 py-4 lg:max-h-[38vh] lg:shrink-0 lg:overflow-y-auto"
       style={{ borderColor: "var(--rule)" }}
     >
       <div className="flex flex-wrap items-baseline gap-3">
         <span className="section-marker">04 / same question, by similarity</span>
         <span className="text-[11px]" style={{ color: "var(--ink-faint)" }}>
-          {loading
-            ? "embedding…"
-            : error
-              ? error
-              : `top ${files.length} of ${corpus} files · ${ms} ms · ${engine}`}
+          {loading ? "embedding…" : error ? error : `top ${files.length} of ${corpus} files · ${engine}`}
         </span>
       </div>
 
@@ -65,15 +59,15 @@ export function BaselineSplit({
             files the similarity search also found, asked for the same count ({files.length}) the
             walk returned
           </p>
-          <p className="mt-2 max-w-2xl text-[11px]" style={{ color: "var(--ink-dim)" }}>
-            The walk's {totalFiles} files are the reference set here, not independent ground
-            truth — the ripgrep-verified eval (F1 0.350 graph vs 0.226 similarity, n=60) is in the
-            README.
-          </p>
           <details className="mt-2">
             <summary className="cursor-pointer text-[11px]" style={{ color: "var(--ink-faint)" }}>
               show the {files.length} files
             </summary>
+            <p className="mt-2 max-w-2xl text-[11px]" style={{ color: "var(--ink-faint)" }}>
+              The walk's {totalFiles} files are the reference set here, not independent ground
+              truth — the ripgrep-verified eval (F1 0.350 graph vs 0.226 similarity, n=60) is in
+              the README.
+            </p>
             <ul className="mt-2 grid gap-x-6 gap-y-1 md:grid-cols-2">
               {files.map((file) => {
                 const alsoInGraph = reachedFiles.has(file);
@@ -103,6 +97,6 @@ export function BaselineSplit({
           </details>
         </>
       )}
-    </section>
+    </div>
   );
 }

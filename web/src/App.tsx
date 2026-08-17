@@ -261,12 +261,12 @@ export default function App() {
           </button>
           {seed && !walking && (
             <button
-              onClick={runBaseline}
+              onClick={() => (compare ? setCompare(false) : runBaseline())}
               className="border px-3 py-2 text-[12px]"
               style={{ borderColor: "var(--rule)", color: "var(--ink-dim)" }}
               title="answer the same question by embedding similarity, for comparison"
             >
-              compare with embeddings
+              {compare ? "back to walk stats" : "compare with embeddings"}
             </button>
           )}
         </div>
@@ -314,8 +314,8 @@ export default function App() {
           </p>
         )}
 
-        {/* The walk, hop by hop. Each tick is a level HydraDB has finished serving. */}
-        {(walking || levels.length > 0) && (
+        {/* Live progress while the walk is running — the hop breakdown below replaces this once it's done. */}
+        {walking && levels.length > 0 && (
           <div className="mt-3 flex flex-wrap items-end gap-2">
             {levels.map((level) => (
               <div
@@ -404,19 +404,18 @@ export default function App() {
         )}
       </div>
 
-      {compare && (
+      {compare ? (
         <BaselineSplit
           files={baselineFiles}
           rows={rows}
-          ms={baselineMeta.ms}
           corpus={baselineMeta.corpus}
           engine={baselineMeta.engine}
           loading={baselineLoading}
           error={baselineError}
         />
+      ) : (
+        <TrustStrip trust={trust} nodes={graphNodes} />
       )}
-
-      <TrustStrip trust={trust} nodes={graphNodes} />
     </div>
   );
 }
