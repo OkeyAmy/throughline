@@ -389,6 +389,7 @@ def ask(request: AskRequest) -> dict:
             "depth": result.depth_reached,
             "round_trips": result.round_trips,
             "ms": round(walk_ms),
+            "edge_types": list(IMPACT_INVERSE_EDGES),
             "engine": "batched BFS over materialised inverse edges (HydraDB)",
             "llm_used_for": "symbol choice and summary only — never for what is impacted",
         }

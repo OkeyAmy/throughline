@@ -67,7 +67,7 @@ export function TrustStrip({ trust, nodes }: { trust: Trust | null; nodes: numbe
         className="col-span-2 px-4 py-2 text-[11px] sm:col-span-5"
         style={{ color: "var(--ink-faint)" }}
       >
-        {trust.engine} · edges walked: {trust.edge_types.join(" · ")}
+        {trust.engine} · edges walked: {(trust.edge_types ?? []).join(" · ")}
       </div>
     </div>
   );
