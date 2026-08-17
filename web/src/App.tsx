@@ -181,7 +181,8 @@ export default function App() {
     try {
       const question =
         mode === "question" ? query : `which files use ${seed.name} from ${seed.path}?`;
-      const result = await baseline(question, 15);
+      const k = new Set(rows.map((row) => row.path)).size || 15;
+      const result = await baseline(question, k);
       setBaselineFiles(result.files);
       setBaselineMeta({
         ms: result.trust.ms,
@@ -193,7 +194,7 @@ export default function App() {
     } finally {
       setBaselineLoading(false);
     }
-  }, [seed, mode, query]);
+  }, [seed, mode, query, rows]);
 
   const repoEntries = Object.entries(totals?.repos ?? {}).sort((a, b) => b[1] - a[1]);
   const widest = repoEntries[0]?.[1] ?? 1;

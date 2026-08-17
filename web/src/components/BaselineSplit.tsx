@@ -1,42 +1,11 @@
 import type { ImpactRow } from "../api";
 
 /**
- * The comparison, live: the same question answered by embedding similarity over
- * the same corpus.
- *
- * The bar lengths are the comparison — read at a glance, not computed from
- * prose. Full measured F1 numbers live in eval_harness/results.md, not here.
+ * The comparison, live: the same question answered by embedding similarity,
+ * asked for exactly as many files as the walk found — so the two are matched
+ * at k and one overlap number means something. The walk is the reference set
+ * here, not independent ground truth; that comparison is in the README.
  */
-function BarRow({
-  label,
-  value,
-  max,
-  color,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  color: string;
-}) {
-  const pct = max > 0 ? Math.max((value / max) * 100, value > 0 ? 2 : 0) : 0;
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-14 shrink-0 truncate text-[11px]" style={{ color: "var(--ink-dim)" }}>
-        {label}
-      </span>
-      <div className="h-4 min-w-8 flex-1" style={{ background: "var(--surface-2)" }}>
-        <div className="h-4" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      <span
-        className="w-12 shrink-0 text-right text-[11px] tabular-nums"
-        style={{ color: "var(--ink)" }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
 export function BaselineSplit({
   files,
   rows,
@@ -55,17 +24,10 @@ export function BaselineSplit({
   error: string | null;
 }) {
   const reachedFiles = new Set(rows.map((row) => row.path));
+  const totalFiles = reachedFiles.size;
   const sharedFiles = new Set(files.filter((file) => reachedFiles.has(file)));
   const shared = sharedFiles.size;
-  const beyondFiles = new Set(
-    rows.filter((row) => !sharedFiles.has(row.path)).map((row) => row.path),
-  );
-  const beyond = beyondFiles.size;
-  const beyondCrossRepo = new Set(
-    rows.filter((row) => row.cross_repo && !sharedFiles.has(row.path)).map((row) => row.path),
-  ).size;
-  const totalFiles = shared + beyond;
-  const scale = Math.max(totalFiles, files.length) || 1;
+  const pct = totalFiles > 0 ? Math.round((shared / totalFiles) * 100) : 0;
 
   return (
     <section
@@ -73,39 +35,43 @@ export function BaselineSplit({
       style={{ borderColor: "var(--rule)" }}
     >
       <div className="flex flex-wrap items-baseline gap-3">
-        <span className="section-marker">04 / same question, answered a different way</span>
+        <span className="section-marker">04 / same question, by similarity</span>
         <span className="text-[11px]" style={{ color: "var(--ink-faint)" }}>
           {loading
             ? "embedding…"
             : error
               ? error
-              : `top ${files.length} of ${corpus} files by similarity · ${ms} ms · ${engine}`}
+              : `top ${files.length} of ${corpus} files · ${ms} ms · ${engine}`}
         </span>
       </div>
 
       {!loading && !error && files.length > 0 && (
         <>
-          <div className="mt-3 flex max-w-2xl flex-col gap-1.5">
-            <BarRow label="graph walk" value={totalFiles} max={scale} color="var(--ink)" />
-            <BarRow label="similarity" value={files.length} max={scale} color="var(--series-cross)" />
+          <div className="mt-3 flex max-w-2xl items-center gap-3">
+            <div className="h-4 min-w-8 flex-1" style={{ background: "var(--surface-2)" }}>
+              <div
+                className="h-4"
+                style={{ width: `${Math.max(pct, shared > 0 ? 2 : 0)}%`, background: "var(--series-call)" }}
+              />
+            </div>
+            <span
+              className="w-32 shrink-0 text-right text-[11px] tabular-nums"
+              style={{ color: "var(--ink)" }}
+            >
+              {shared} of {totalFiles} ({pct}%)
+            </span>
           </div>
+          <p className="mt-1 max-w-2xl text-[11px]" style={{ color: "var(--ink-faint)" }}>
+            files the similarity search also found, asked for the same count ({files.length}) the
+            walk returned
+          </p>
           <p className="mt-2 max-w-2xl text-[11px]" style={{ color: "var(--ink-dim)" }}>
-            Both found the same <span style={{ color: "var(--series-call)" }}>{shared}</span>. The
-            walk found <span style={{ color: "var(--ink)" }}>{beyond}</span> more
-            {beyondCrossRepo > 0 && (
-              <>
-                {" "}
-                — <span style={{ color: "var(--series-cross)" }}>{beyondCrossRepo}</span> of them
-                in another repository
-              </>
-            )}
-            .
+            The walk's {totalFiles} files are the reference set here, not independent ground
+            truth — the ripgrep-verified eval (F1 0.350 graph vs 0.226 similarity, n=60) is in the
+            README.
           </p>
           <details className="mt-2">
-            <summary
-              className="cursor-pointer text-[11px]"
-              style={{ color: "var(--ink-faint)" }}
-            >
+            <summary className="cursor-pointer text-[11px]" style={{ color: "var(--ink-faint)" }}>
               show the {files.length} files
             </summary>
             <ul className="mt-2 grid gap-x-6 gap-y-1 md:grid-cols-2">
@@ -123,7 +89,7 @@ export function BaselineSplit({
                     <span
                       className="truncate"
                       style={{ color: alsoInGraph ? "var(--ink)" : "var(--ink-faint)" }}
-                      title={alsoInGraph ? "also reached by traversal" : "similarity only"}
+                      title={alsoInGraph ? "also found by the walk" : "similarity only"}
                     >
                       {file}
                     </span>
