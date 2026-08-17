@@ -30,7 +30,8 @@ export function TrustStrip({ trust, nodes }: { trust: Trust | null; nodes: numbe
   if (!trust) {
     return (
       <div className="border-t px-6 py-3 text-[11px]" style={{ borderColor: "var(--rule)", color: "var(--ink-faint)" }}>
-        no walk yet — pick a symbol
+        pick a symbol above — try "JSONResponse" — to see every file that would be affected if
+        you changed it
       </div>
     );
   }

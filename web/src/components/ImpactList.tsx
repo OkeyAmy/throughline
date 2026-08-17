@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { ImpactRow } from "../api";
 
 type Props = {
@@ -15,10 +16,110 @@ const FILTERS: { key: Props["filter"]; label: string }[] = [
   { key: "tests", label: "tests to run" },
 ];
 
+function hopLabel(hop: number): string {
+  if (hop <= 1) return "directly connected";
+  if (hop === 2) return "one step away";
+  return "further downstream";
+}
+
+function Row({
+  row,
+  seedRepo,
+  isSelected,
+  onSelect,
+}: {
+  row: ImpactRow;
+  seedRepo: string;
+  isSelected: boolean;
+  onSelect: (row: ImpactRow) => void;
+}) {
+  return (
+    <li>
+      <button
+        onClick={() => onSelect(row)}
+        className="flex w-full items-baseline gap-3 border-b px-6 py-2 text-left"
+        style={{
+          borderColor: "var(--rule)",
+          background: isSelected ? "var(--surface-1)" : "transparent",
+        }}
+      >
+        <span
+          className="w-6 shrink-0 text-[11px] tabular-nums"
+          style={{ color: "var(--ink-faint)" }}
+          title={`${row.hop} hop${row.hop === 1 ? "" : "s"} from the change`}
+        >
+          {row.hop}
+        </span>
+        <span
+          className="w-14 shrink-0 truncate text-[11px]"
+          style={{ color: row.cross_repo ? "var(--series-cross)" : "var(--ink-dim)" }}
+        >
+          {row.repo}
+        </span>
+        <span className="min-w-0 flex-1 truncate" style={{ color: "var(--ink)" }}>
+          {row.name}
+        </span>
+        <span
+          className="min-w-0 max-w-[45%] shrink truncate text-[11px]"
+          style={{ color: "var(--ink-faint)" }}
+        >
+          {row.path}
+          {row.line > 0 ? `:${row.line}` : ""}
+        </span>
+        {row.is_test && (
+          <span
+            className="shrink-0 border px-1 text-[10px] uppercase tracking-wider"
+            style={{ borderColor: "var(--rule)", color: "var(--ink-dim)" }}
+          >
+            test
+          </span>
+        )}
+        {row.cross_repo && (
+          <span
+            className="shrink-0 border px-1 text-[10px] uppercase tracking-wider"
+            style={{ borderColor: "var(--series-cross)", color: "var(--series-cross)" }}
+            title={`defined in ${seedRepo}, reached in ${row.repo}`}
+          >
+            cross-repo
+          </span>
+        )}
+      </button>
+    </li>
+  );
+}
+
+function GroupHeader({ hop, count }: { hop: number; count: number }) {
+  return (
+    <li
+      className="section-marker border-b px-6 py-1.5"
+      style={{ borderColor: "var(--rule)", background: "var(--surface-1)", color: "var(--ink-faint)" }}
+    >
+      hop {hop} — {hopLabel(hop)} ({count})
+    </li>
+  );
+}
+
 export function ImpactList({ rows, seedRepo, filter, onFilter, selected, onSelect }: Props) {
   const visible = rows.filter((row) =>
     filter === "cross" ? row.cross_repo : filter === "tests" ? row.is_test : true,
   );
+  const testsCount = rows.filter((row) => row.is_test).length;
+  const crossCount = rows.filter((row) => row.cross_repo).length;
+  const counts: Record<Props["filter"], number> = {
+    all: rows.length,
+    cross: crossCount,
+    tests: testsCount,
+  };
+
+  const groups: { hop: number; rows: ImpactRow[] }[] = [];
+  for (const row of visible) {
+    const last = groups[groups.length - 1];
+    if (last && last.hop === row.hop) last.rows.push(row);
+    else groups.push({ hop: row.hop, rows: [row] });
+  }
+  const primaryGroups = groups.filter((group) => group.hop <= 2);
+  const restGroups = groups.filter((group) => group.hop > 2);
+  const restCount = restGroups.reduce((sum, group) => sum + group.rows.length, 0);
 
   return (
     <section className="flex flex-col lg:min-h-0 lg:flex-1">
@@ -44,66 +145,56 @@ export function ImpactList({ rows, seedRepo, filter, onFilter, selected, onSelec
                 background: filter === option.key ? "var(--surface-2)" : "transparent",
               }}
             >
-              {option.label}
+              {option.label} ({counts[option.key]})
             </button>
           ))}
         </div>
       </header>
 
       <ol className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-        {visible.map((row) => {
-          const isSelected = selected === row.id;
-          return (
-            <li key={row.id}>
-              <button
-                onClick={() => onSelect(row)}
-                className="flex w-full items-baseline gap-3 border-b px-6 py-2 text-left"
-                style={{
-                  borderColor: "var(--rule)",
-                  background: isSelected ? "var(--surface-1)" : "transparent",
-                }}
+        {primaryGroups.map((group) => (
+          <Fragment key={`h-${group.hop}`}>
+            <GroupHeader hop={group.hop} count={group.rows.length} />
+            {group.rows.map((row) => (
+              <Row
+                key={row.id}
+                row={row}
+                seedRepo={seedRepo}
+                isSelected={selected === row.id}
+                onSelect={onSelect}
+              />
+            ))}
+          </Fragment>
+        ))}
+
+        {restGroups.length > 0 && (
+          <li>
+            <details>
+              <summary
+                className="cursor-pointer border-b px-6 py-2 text-[11px]"
+                style={{ borderColor: "var(--rule)", color: "var(--ink-faint)" }}
               >
-                <span
-                  className="w-6 shrink-0 text-[11px] tabular-nums"
-                  style={{ color: "var(--ink-faint)" }}
-                  title={`${row.hop} hop${row.hop === 1 ? "" : "s"} from the change`}
-                >
-                  {row.hop}
-                </span>
-                <span
-                  className="w-14 shrink-0 truncate text-[11px]"
-                  style={{ color: row.cross_repo ? "var(--series-cross)" : "var(--ink-dim)" }}
-                >
-                  {row.repo}
-                </span>
-                <span className="min-w-0 flex-1 truncate" style={{ color: "var(--ink)" }}>
-                  {row.name}
-                </span>
-                <span className="min-w-0 max-w-[45%] shrink truncate text-[11px]" style={{ color: "var(--ink-faint)" }}>
-                  {row.path}
-                  {row.line > 0 ? `:${row.line}` : ""}
-                </span>
-                {row.is_test && (
-                  <span
-                    className="shrink-0 border px-1 text-[10px] uppercase tracking-wider"
-                    style={{ borderColor: "var(--rule)", color: "var(--ink-dim)" }}
-                  >
-                    test
-                  </span>
-                )}
-                {row.cross_repo && (
-                  <span
-                    className="shrink-0 border px-1 text-[10px] uppercase tracking-wider"
-                    style={{ borderColor: "var(--series-cross)", color: "var(--series-cross)" }}
-                    title={`defined in ${seedRepo}, reached in ${row.repo}`}
-                  >
-                    cross-repo
-                  </span>
-                )}
-              </button>
-            </li>
-          );
-        })}
+                show {restCount} more at hop 3+
+              </summary>
+              <ol>
+                {restGroups.map((group) => (
+                  <Fragment key={`h-${group.hop}`}>
+                    <GroupHeader hop={group.hop} count={group.rows.length} />
+                    {group.rows.map((row) => (
+                      <Row
+                        key={row.id}
+                        row={row}
+                        seedRepo={seedRepo}
+                        isSelected={selected === row.id}
+                        onSelect={onSelect}
+                      />
+                    ))}
+                  </Fragment>
+                ))}
+              </ol>
+            </details>
+          </li>
+        )}
 
         {visible.length === 0 && (
           <li className="px-6 py-6 text-[12px]" style={{ color: "var(--ink-faint)" }}>

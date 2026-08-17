@@ -209,7 +209,7 @@ export default function App() {
         <div className="flex items-baseline gap-4">
           <h1 className="display text-[26px] leading-none">throughline</h1>
           <p className="text-[11px]" style={{ color: "var(--ink-dim)" }}>
-            what a change reaches — across every repo in the workspace
+            you changed a function — what else breaks, including in repos you don't have open?
           </p>
         </div>
         <p className="text-[11px]" style={{ color: "var(--ink-faint)" }}>
